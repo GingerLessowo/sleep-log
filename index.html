@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f2f3f5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="睡眠记录">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-512.png">
+<title>睡眠记录</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f2f3f5;
+    --card: #ffffff;
+    --text: #1f2329;
+    --muted: #8a919f;
+    --line: #e5e6eb;
+    --focus: #4a7dff;
+    --good: #17994f;
+    --mid: #b8860b;
+    --bad: #d03050;
+    --warn-bg: #fff7e6;
+    --warn-line: #f0d9a8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 26px 16px 72px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { width: 100%; max-width: 560px; }
+  .card { background: var(--card); border-radius: 14px; margin-bottom: 14px; }
+  kbd {
+    background: #f2f3f5;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0 5px;
+    font: 12px/1.6 ui-monospace, Consolas, monospace;
+    color: #4e5969;
+  }
+
+  #warn {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-line);
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: #8a6d1a;
+    margin-bottom: 14px;
+  }
+
+  /* ---- 打点区 ---- */
+  .tap { padding: 22px 20px 15px; }
+  .big {
+    display: block; width: 100%;
+    border: 0; border-radius: 12px;
+    font-family: inherit; font-size: 21px; font-weight: 600; letter-spacing: 3px;
+    color: #fff; padding: 19px 0;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+  }
+  .big:active { transform: scale(.985); }
+  .big.sleep { background: #35406b; }
+  .big.sleep:hover { background: #2c365d; }
+  .big.wake { background: #e6a23c; }
+  .big.wake:hover { background: #d6942c; }
+  .tap .state { text-align: center; color: var(--muted); font-size: 12.5px; padding-top: 10px; }
+
+  /* ---- 小结 ---- */
+  .stats { padding: 12px 20px; font-size: 13px; color: #4e5969; }
+  .stats .k { font-weight: 600; color: var(--text); }
+
+  /* ---- 列表 ---- */
+  .list-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 20px 9px; color: var(--muted); font-size: 13px;
+  }
+  ul { list-style: none; }
+  .rec {
+    padding: 10px 20px;
+    border-top: 1px solid var(--line);
+  }
+  .rec.flash { animation: flash 1s ease-out; }
+  @keyframes flash { from { background: #eef3ff; } to { background: transparent; } }
+  .rec .top { display: flex; align-items: baseline; gap: 10px; }
+  .rec .date { flex: none; font-size: 13.5px; color: var(--text); }
+  .rec .span {
+    flex: 1; min-width: 0;
+    color: #4e5969; font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rec .dur {
+    flex: none; font-size: 13px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .rec.pending .dur { color: var(--mid); font-size: 12.5px; }
+  .rec .del {
+    flex: none;
+    border: 0; background: transparent; border-radius: 7px;
+    font-family: inherit; font-size: 14px; color: #c9cdd4;
+    padding: 0 6px; cursor: pointer;
+    transition: color .12s, background .12s;
+  }
+  .rec .del:hover { background: #f2f3f5; color: var(--bad); }
+  .rec .ctl { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+  .rec .note-line { color: var(--muted); font-size: 12.5px; }
+
+  /* 评分三档 */
+  .rate { display: flex; flex: none; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .rate button {
+    border: 0; border-left: 1px solid var(--line);
+    background: #fff;
+    font-family: inherit; font-size: 12px; line-height: 1.6;
+    color: #4e5969;
+    padding: 2px 10px; cursor: pointer;
+    transition: background .12s;
+  }
+  .rate button:first-child { border-left: 0; }
+  .rate button:hover { background: #f7f8fa; }
+  .rate button.on[data-rate="good"] { background: #e8f5ee; color: var(--good); font-weight: 600; }
+  .rate button.on[data-rate="ok"] { background: #fdf6e3; color: var(--mid); font-weight: 600; }
+  .rate button.on[data-rate="bad"] { background: #fdeef1; color: var(--bad); font-weight: 600; }
+
+  /* 标签 */
+  .tg-sum {
+    flex: 1; min-width: 0;
+    font-size: 12.5px; color: var(--muted);
+    text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer;
+    transition: color .12s;
+  }
+  .tg-sum:hover { color: var(--focus); }
+  .tg-sum.has { color: #4e5969; }
+  .tg-sum.has:hover { color: var(--focus); }
+  .tg-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tg {
+    border: 1px solid var(--line); background: #fff;
+    border-radius: 999px;
+    font-family: inherit; font-size: 12px; line-height: 1.6;
+    color: #4e5969;
+    padding: 1px 10px; cursor: pointer;
+    transition: border-color .12s, background .12s, color .12s;
+  }
+  .tg:hover { border-color: #c9cdd4; }
+  .tg.on { background: #eef3ff; border-color: #bcd0ff; color: var(--focus); font-weight: 600; }
+
+  .empty { padding: 30px 22px 36px; text-align: center; color: var(--muted); font-size: 13.5px; line-height: 2; }
+
+  /* ---- 补记表单 ---- */
+  .note { padding: 16px 20px 14px; }
+  .note-form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+  .note-form label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  input { font-family: inherit; font-size: 14px; color: var(--text); background: transparent; border: 0; outline: 0; width: 100%; }
+  input.boxed {
+    width: auto;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 6px 9px;
+    background: #fff;
+    transition: border-color .12s;
+  }
+  input.boxed:focus { border-color: var(--focus); }
+  .note-btns { display: flex; gap: 8px; margin-left: auto; }
+  .note-hint { flex-basis: 100%; color: var(--muted); font-size: 12px; }
+
+  /* ---- 底部工具条 ---- */
+  .toolbar { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 9px;
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--text);
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+  }
+  .btn:hover { border-color: #c9cdd4; background: #f7f8fa; }
+  .btn:disabled { color: #c9cdd4; cursor: default; background: #fff; border-color: var(--line); }
+  .toolbar .btn { font-size: 12.5px; padding: 6px 11px; }
+
+  /* ---- 撤销条 ---- */
+  #undo {
+    position: fixed; left: 50%; bottom: 26px;
+    transform: translate(-50%, 12px);
+    background: #1f2329; color: #fff; font-size: 13px;
+    padding: 9px 16px; border-radius: 999px;
+    display: flex; align-items: center; gap: 14px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .18s, transform .18s;
+    box-shadow: 0 6px 20px rgba(0,0,0,.18);
+    z-index: 40;
+    max-width: 90vw;
+  }
+  #undo.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #undo button { background: none; border: 0; color: #7ea2ff; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; padding: 0; flex: none; }
+  #undoText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  [hidden] { display: none !important; }
+
+  /* PWA/移动端适配（由 build.js 注入） */
+  html { -webkit-text-size-adjust: 100%; }
+  body { padding: calc(20px + env(safe-area-inset-top)) 16px calc(72px + env(safe-area-inset-bottom)); }
+  #undo { bottom: calc(26px + env(safe-area-inset-bottom)); }
+  @media (max-width: 480px) {
+    .big { padding: 22px 0; }
+    .rate button { padding: 6px 14px; }
+    .tg { padding: 4px 13px; }
+    .rec .del { padding: 4px 10px; }
+    input.boxed { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="warn" hidden>本地存储不可用：数据只在本页内存中，关闭页面即丢失。请尽快用「导出备份」留一份。</div>
+
+  <div class="card tap">
+    <button type="button" id="primaryBtn" class="big sleep">现在睡了</button>
+    <div class="state" id="stateLine">睡前点一下 · 早上醒来点「我醒了」</div>
+  </div>
+
+  <div class="card stats" id="stats" hidden></div>
+
+  <section class="card" id="listCard" hidden>
+    <div class="list-head"><span>记录</span><span id="listCnt"></span></div>
+    <ul id="list"></ul>
+  </section>
+
+  <div class="card empty" id="empty" hidden>还没有记录。<br>睡前点「现在睡了」，早上点「我醒了」。</div>
+
+  <div class="card note" id="noteCard" hidden>
+    <div class="note-form">
+      <label>日期<input type="date" id="noteDate" class="boxed"></label>
+      <label>入睡<input type="time" id="noteSleep" class="boxed"></label>
+      <label>起床<input type="time" id="noteWake" class="boxed"></label>
+      <div class="note-btns">
+        <button type="button" class="btn" id="noteSave" disabled>保存</button>
+        <button type="button" class="btn" id="noteCancel">取消</button>
+      </div>
+      <div class="note-hint">日期填入睡那天；过午夜起床会自动算到第二天。</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <button type="button" class="btn" id="noteBtn">补记一晚</button>
+    <button type="button" class="btn" id="importBtn">导入备份</button>
+    <button type="button" class="btn" id="exportBtn">导出备份</button>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+  </div>
+</main>
+
+<div id="undo"><span id="undoText"></span><button type="button" id="undoBtn">撤销</button></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'sleep-log-v1';
+  var UNDO_MS = 6000;
+  var QUALITY = [['good', '好'], ['ok', '一般'], ['bad', '差']];
+  var TAGS = [
+    ['coffee', '咖啡茶'],
+    ['alcohol', '酒'],
+    ['sport', '运动'],
+    ['phone', '手机'],
+    ['snack', '夜宵'],
+    ['stress', '压力'],
+    ['sick', '生病'],
+    ['nap', '午睡']
+  ];
+  var QUALITY_KEYS = QUALITY.map(function (q) { return q[0]; });
+  var TAG_KEYS = TAGS.map(function (t) { return t[0]; });
+  var TAG_TEXT = {};
+  TAGS.forEach(function (t) { TAG_TEXT[t[0]] = t[1]; });
+
+  var state = { pending: null, records: [] };
+  var undoAction = null;
+  var undoTimer = null;
+
+  function $(id) { return document.getElementById(id); }
+  var $primary = $('primaryBtn');
+  var $state = $('stateLine');
+  var $stats = $('stats');
+  var $list = $('list');
+  var $listCard = $('listCard');
+  var $listCnt = $('listCnt');
+
+  /* ---------- 存储 ---------- */
+  /* 时间数据可用即保留；quality/tags 等旁支字段在 normalizeRec 中归一，不因旁支丢整晚 */
+  function validRec(r) {
+    return r && typeof r === 'object'
+      && typeof r.id === 'string' && r.id
+      && typeof r.sleepTs === 'number' && isFinite(r.sleepTs)
+      && typeof r.wakeTs === 'number' && isFinite(r.wakeTs) && r.wakeTs > r.sleepTs;
+  }
+
+  function normalizeRec(r) {
+    var tags = [];
+    if (Array.isArray(r.tags)) {
+      r.tags.forEach(function (t) {
+        if (TAG_KEYS.indexOf(t) !== -1 && tags.indexOf(t) === -1) tags.push(t);
+      });
+    }
+    return {
+      id: r.id,
+      sleepTs: r.sleepTs,
+      wakeTs: r.wakeTs,
+      quality: QUALITY_KEYS.indexOf(r.quality) !== -1 ? r.quality : null,
+      tags: tags,
+      ts: (typeof r.ts === 'number' && isFinite(r.ts)) ? r.ts : r.wakeTs
+    };
+  }
+
+  function load() {
+    var empty = { pending: null, records: [] };
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return empty;
+      var data = JSON.parse(raw);
+      if (!data || typeof data !== 'object') return empty;
+      var records = Array.isArray(data.records) ? data.records.filter(validRec).map(normalizeRec) : [];
+      var pending = (typeof data.pending === 'number' && isFinite(data.pending) && data.pending > 0) ? data.pending : null;
+      return { pending: pending, records: records };
+    } catch (err) {
+      console.error('读取存储失败，按空数据启动', err);
+      return empty;
+    }
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, pending: state.pending, records: state.records }));
+    } catch (err) {
+      console.error('保存失败', err);
+      $('warn').hidden = false;
+    }
+  }
+
+  /* ---------- 日期时间 ---------- */
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function dayKey(ts) {
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  function dateText(ts) {
+    var d = new Date(ts), now = new Date();
+    var k = dayKey(ts);
+    if (k === dayKey(now.getTime())) return '今天';
+    if (k === dayKey(now.getTime() - 86400000)) return '昨天';
+    return (d.getFullYear() === now.getFullYear() ? '' : d.getFullYear() + '年') + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  }
+
+  function timeText(ts) {
+    var d = new Date(ts);
+    return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
+  function durMinutes(sleepTs, wakeTs) {
+    return Math.max(0, Math.round((wakeTs - sleepTs) / 60000));
+  }
+
+  function durText(min) {
+    var h = Math.floor(min / 60), m = min % 60;
+    if (h && m) return h + '小时' + m + '分';
+    if (h) return h + '小时';
+    return m + '分';
+  }
+
+  /* 入睡时刻折算：中午 12 点前的时刻算作前一天深夜，便于跨天求平均 */
+  function sleepMinutesOf(ts) {
+    var d = new Date(ts);
+    var m = d.getHours() * 60 + d.getMinutes();
+    return m < 720 ? m + 1440 : m;
+  }
+
+  function hhmmText(min) {
+    min = ((min % 1440) + 1440) % 1440;
+    return pad2(Math.floor(min / 60)) + ':' + pad2(min % 60);
+  }
+
+  /* ---------- 工具 ---------- */
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  function findRec(id) {
+    for (var i = 0; i < state.records.length; i++) {
+      if (state.records[i].id === id) return { idx: i, rec: state.records[i] };
+    }
+    return null;
+  }
+
+  function blurActive() {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+
+  function flashRec(id) {
+    var li = document.querySelector('.rec[data-id="' + id + '"]');
+    if (li) li.classList.add('flash');
+  }
+
+  function sortedDesc() {
+    return state.records.slice().sort(function (a, b) { return b.sleepTs - a.sleepTs; });
+  }
+
+  /* ---------- 渲染 ---------- */
+  function paintTap() {
+    if (state.pending) {
+      $primary.textContent = '我醒了';
+      $primary.className = 'big wake';
+      $state.textContent = dateText(state.pending) + ' ' + timeText(state.pending) + ' 睡了 · 醒来后点上面';
+    } else {
+      $primary.textContent = '现在睡了';
+      $primary.className = 'big sleep';
+      $state.textContent = '睡前点一下 · 早上醒来点「我醒了」';
+    }
+  }
+
+  function paintStats() {
+    var done = sortedDesc();
+    var n = Math.min(7, done.length);
+    if (!n) { $stats.hidden = true; return; }
+    $stats.hidden = false;
+    var sumD = 0, sumS = 0;
+    for (var i = 0; i < n; i++) {
+      sumD += durMinutes(done[i].sleepTs, done[i].wakeTs);
+      sumS += sleepMinutesOf(done[i].sleepTs);
+    }
+    var avgD = Math.round(sumD / n);
+    var avgS = Math.round(sumS / n);
+
+    $stats.textContent = '';
+    function key(txt) {
+      var s = document.createElement('span');
+      s.className = 'k';
+      s.textContent = txt;
+      return s;
+    }
+    if (n === 1) {
+      $stats.appendChild(document.createTextNode('最近 1 晚：'));
+    } else {
+      $stats.appendChild(document.createTextNode('近' + n + '晚：平均 '));
+    }
+    $stats.appendChild(key(durText(avgD)));
+    $stats.appendChild(document.createTextNode(n === 1 ? ' · ' : ' · 平均 '));
+    $stats.appendChild(key(hhmmText(avgS)));
+    $stats.appendChild(document.createTextNode(' 入睡'));
+  }
+
+  function tagSumText(rec) {
+    if (!rec.tags.length) return '＋标签';
+    return rec.tags.map(function (t) { return TAG_TEXT[t]; }).join('、');
+  }
+
+  function buildRating(rec) {
+    var rate = document.createElement('div');
+    rate.className = 'rate';
+    QUALITY.forEach(function (q) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.rate = q[0];
+      b.dataset.id = rec.id;
+      b.textContent = q[1];
+      b.title = '睡眠质量：' + q[1];
+      if (rec.quality === q[0]) b.classList.add('on');
+      rate.appendChild(b);
+    });
+    return rate;
+  }
+
+  function buildTagChips(rec) {
+    var row = document.createElement('div');
+    row.className = 'tg-row';
+    row.dataset.tgrow = rec.id;
+    TAGS.forEach(function (t) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tg';
+      b.dataset.tag = t[0];
+      b.dataset.id = rec.id;
+      b.textContent = t[1];
+      if (rec.tags.indexOf(t[0]) !== -1) b.classList.add('on');
+      row.appendChild(b);
+    });
+    return row;
+  }
+
+  function buildRow(rec) {
+    var li = document.createElement('li');
+    li.className = 'rec';
+    li.dataset.id = rec.id;
+
+    var top = document.createElement('div');
+    top.className = 'top';
+
+    var date = document.createElement('span');
+    date.className = 'date';
+    date.textContent = dateText(rec.sleepTs);
+    date.title = '入睡于 ' + timeText(rec.sleepTs);
+    top.appendChild(date);
+
+    var span = document.createElement('span');
+    span.className = 'span';
+    span.textContent = timeText(rec.sleepTs) + ' → ' + timeText(rec.wakeTs);
+    var dm = durMinutes(rec.sleepTs, rec.wakeTs);
+    span.title = '睡了 ' + durText(dm);
+    top.appendChild(span);
+
+    var dur = document.createElement('span');
+    dur.className = 'dur';
+    dur.textContent = durText(dm);
+    top.appendChild(dur);
+
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'del';
+    del.dataset.del = rec.id;
+    del.title = '删除';
+    del.textContent = '×';
+    top.appendChild(del);
+
+    li.appendChild(top);
+
+    var ctl = document.createElement('div');
+    ctl.className = 'ctl';
+    ctl.appendChild(buildRating(rec));
+
+    var sum = document.createElement('span');
+    sum.className = 'tg-sum' + (rec.tags.length ? ' has' : '');
+    sum.dataset.tgsum = rec.id;
+    sum.title = '点击展开标签';
+    sum.textContent = tagSumText(rec);
+    ctl.appendChild(sum);
+
+    li.appendChild(ctl);
+    return li;
+  }
+
+  function buildPendingRow(ts) {
+    var li = document.createElement('li');
+    li.className = 'rec pending';
+
+    var top = document.createElement('div');
+    top.className = 'top';
+
+    var date = document.createElement('span');
+    date.className = 'date';
+    date.textContent = dateText(ts);
+    top.appendChild(date);
+
+    var span = document.createElement('span');
+    span.className = 'span';
+    span.textContent = timeText(ts) + ' 睡了';
+    top.appendChild(span);
+
+    var dur = document.createElement('span');
+    dur.className = 'dur';
+    dur.textContent = '未结束';
+    top.appendChild(dur);
+
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'del';
+    del.dataset.cancel = '1';
+    del.title = '取消这次打点';
+    del.textContent = '×';
+    top.appendChild(del);
+
+    li.appendChild(top);
+
+    var ctl = document.createElement('div');
+    ctl.className = 'ctl';
+    var hint = document.createElement('span');
+    hint.className = 'note-line';
+    hint.textContent = '醒来后点「我醒了」生成这一晚';
+    ctl.appendChild(hint);
+    li.appendChild(ctl);
+
+    return li;
+  }
+
+  function renderAll() {
+    paintTap();
+    paintStats();
+
+    var items = sortedDesc();
+    $list.textContent = '';
+    if (state.pending) $list.appendChild(buildPendingRow(state.pending));
+    items.forEach(function (r) { $list.appendChild(buildRow(r)); });
+
+    $listCard.hidden = !state.pending && items.length === 0;
+    $listCnt.textContent = items.length ? items.length + ' 晚' : '';
+    $('empty').hidden = !!(state.pending || items.length);
+  }
+
+  /* ---------- 打点 ---------- */
+  function startSleep() {
+    var now = Date.now();
+    state.pending = now;
+    save();
+    renderAll();
+    blurActive();
+    showUndo('已记录「睡了」：' + timeText(now), function () {
+      state.pending = null;
+      save();
+      renderAll();
+    });
+  }
+
+  function completeSleep() {
+    var st = state.pending;
+    if (!st) return;
+    var now = Date.now();
+    var wake = now > st ? now : st + 1;
+    var rec = { id: genId(), sleepTs: st, wakeTs: wake, quality: null, tags: [], ts: now };
+    state.pending = null;
+    state.records.push(rec);
+    save();
+    renderAll();
+    blurActive();
+    flashRec(rec.id);
+    showUndo('已生成：' + dateText(st) + ' ' + timeText(st) + ' → ' + timeText(wake), function () {
+      var hit = findRec(rec.id);
+      if (hit) state.records.splice(hit.idx, 1);
+      state.pending = st;
+      save();
+      renderAll();
+    });
+  }
+
+  function cancelPending() {
+    var st = state.pending;
+    if (!st) return;
+    state.pending = null;
+    save();
+    renderAll();
+    showUndo('已取消：' + timeText(st) + ' 的「睡了」打点', function () {
+      state.pending = st;
+      save();
+      renderAll();
+    });
+  }
+
+  /* ---------- 评分 / 标签（就地更新，不整页重绘） ---------- */
+  function setQuality(id, q) {
+    var hit = findRec(id);
+    if (!hit) return;
+    hit.rec.quality = hit.rec.quality === q ? null : q;
+    save();
+    var row = document.querySelector('.rec[data-id="' + id + '"]');
+    if (!row) return;
+    Array.prototype.forEach.call(row.querySelectorAll('.rate button'), function (b) {
+      b.classList.toggle('on', b.dataset.rate === hit.rec.quality);
+    });
+  }
+
+  function toggleTag(id, key) {
+    var hit = findRec(id);
+    if (!hit) return;
+    var idx = hit.rec.tags.indexOf(key);
+    if (idx === -1) hit.rec.tags.push(key);
+    else hit.rec.tags.splice(idx, 1);
+    save();
+    var row = document.querySelector('.rec[data-id="' + id + '"]');
+    if (!row) return;
+    var chip = row.querySelector('.tg[data-tag="' + key + '"]');
+    if (chip) chip.classList.toggle('on', hit.rec.tags.indexOf(key) !== -1);
+    var sum = row.querySelector('.tg-sum');
+    if (sum) {
+      sum.textContent = tagSumText(hit.rec);
+      sum.classList.toggle('has', hit.rec.tags.length > 0);
+    }
+  }
+
+  function toggleTagRow(id) {
+    var row = document.querySelector('.rec[data-id="' + id + '"]');
+    if (!row) return;
+    var exist = row.querySelector('.tg-row');
+    if (exist) { exist.remove(); return; }
+    var hit = findRec(id);
+    if (!hit) return;
+    row.appendChild(buildTagChips(hit.rec));
+  }
+
+  /* ---------- 删除 ---------- */
+  function doDelete(id) {
+    var hit = findRec(id);
+    if (!hit) return;
+    var removed = state.records.splice(hit.idx, 1)[0];
+    save();
+    renderAll();
+    showUndo('已删除：' + dateText(removed.sleepTs) + ' ' + timeText(removed.sleepTs) + ' → ' + timeText(removed.wakeTs), function () {
+      state.records.push(removed);
+      save();
+      renderAll();
+      flashRec(removed.id);
+    });
+  }
+
+  /* ---------- 补记 ---------- */
+  function ymdValue(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  function openNote() {
+    $('noteDate').value = ymdValue(new Date(Date.now() - 86400000));
+    $('noteSleep').value = '';
+    $('noteWake').value = '';
+    refreshNoteSave();
+    $('noteCard').hidden = false;
+  }
+
+  function closeNote() {
+    $('noteCard').hidden = true;
+  }
+
+  function refreshNoteSave() {
+    $('noteSave').disabled = !($('noteSleep').value && $('noteWake').value);
+  }
+
+  function saveNote() {
+    var dv = $('noteDate').value || ymdValue(new Date(Date.now() - 86400000));
+    var sv = $('noteSleep').value, wv = $('noteWake').value;
+    if (!sv || !wv) return;
+    var dp = dv.split('-'), sp = sv.split(':'), wp = wv.split(':');
+    var y = +dp[0], mo = +dp[1], da = +dp[2];
+    var sh = +sp[0], sm = +sp[1], wh = +wp[0], wm = +wp[1];
+    if (!y || !mo || !da || isNaN(sh) || isNaN(sm) || isNaN(wh) || isNaN(wm)) return;
+    var sleepTs = new Date(y, mo - 1, da, sh, sm).getTime();
+    var wakeDay = (wh * 60 + wm) <= (sh * 60 + sm) ? da + 1 : da;
+    var wakeTs = new Date(y, mo - 1, wakeDay, wh, wm).getTime();
+    var rec = { id: genId(), sleepTs: sleepTs, wakeTs: wakeTs, quality: null, tags: [], ts: Date.now() };
+    state.records.push(rec);
+    save();
+    closeNote();
+    renderAll();
+    flashRec(rec.id);
+    showUndo('已补记：' + dateText(sleepTs) + ' ' + timeText(sleepTs) + ' → ' + timeText(wakeTs), function () {
+      var hit = findRec(rec.id);
+      if (hit) state.records.splice(hit.idx, 1);
+      save();
+      renderAll();
+    });
+  }
+
+  /* ---------- 撤销条 ---------- */
+  function showUndo(text, fn) {
+    undoAction = fn;
+    $('undoText').textContent = text;
+    $('undo').classList.add('show');
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(hideUndo, UNDO_MS);
+  }
+
+  function hideUndo() {
+    undoAction = null;
+    clearTimeout(undoTimer);
+    $('undo').classList.remove('show');
+  }
+
+  $('undoBtn').addEventListener('click', function () {
+    if (!undoAction) return;
+    var fn = undoAction;
+    hideUndo();
+    fn();
+  });
+
+  /* ---------- 导出 / 导入 ---------- */
+  function exportJSON() {
+    var now = new Date();
+    var ymd = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate());
+    var data = { v: 1, exportedAt: now.toISOString(), pending: state.pending, records: state.records };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = '睡眠记录备份-' + ymd + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+  }
+
+  $('exportBtn').addEventListener('click', exportJSON);
+  $('importBtn').addEventListener('click', function () { $('importFile').click(); });
+
+  $('importFile').addEventListener('change', function () {
+    var input = this;
+    var f = input.files && input.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      input.value = '';
+      var data;
+      try {
+        data = JSON.parse(String(reader.result));
+      } catch (err) {
+        alert('导入失败：文件不是有效的 JSON');
+        return;
+      }
+      if (!data || typeof data !== 'object' || !Array.isArray(data.records)) {
+        alert('导入失败：不像是本工具的备份文件（缺少 records）');
+        return;
+      }
+      var records = data.records.filter(validRec).map(normalizeRec);
+      var pending = (typeof data.pending === 'number' && isFinite(data.pending) && data.pending > 0) ? data.pending : null;
+      var ok = confirm('将用备份覆盖当前全部数据（现有 ' + state.records.length + ' 晚 → 备份 ' + records.length + ' 晚），确定？');
+      if (!ok) return;
+      state.records = records;
+      state.pending = pending;
+      save();
+      renderAll();
+      alert('已导入 ' + records.length + ' 晚记录');
+    };
+    reader.readAsText(f);
+  });
+
+  /* ---------- 事件 ---------- */
+  $primary.addEventListener('click', function () {
+    if (state.pending) completeSleep();
+    else startSleep();
+  });
+
+  $('noteBtn').addEventListener('click', function () {
+    if ($('noteCard').hidden) openNote();
+    else closeNote();
+  });
+  $('noteCancel').addEventListener('click', closeNote);
+  $('noteSave').addEventListener('click', saveNote);
+  $('noteSleep').addEventListener('input', refreshNoteSave);
+  $('noteWake').addEventListener('input', refreshNoteSave);
+
+  document.addEventListener('click', function (ev) {
+    var del = ev.target.closest('[data-del]');
+    if (del) { doDelete(del.dataset.del); return; }
+    var cancel = ev.target.closest('[data-cancel]');
+    if (cancel) { cancelPending(); return; }
+    var rate = ev.target.closest('.rate button');
+    if (rate) { setQuality(rate.dataset.id, rate.dataset.rate); return; }
+    var tg = ev.target.closest('.tg[data-tag]');
+    if (tg) { toggleTag(tg.dataset.id, tg.dataset.tag); return; }
+    var sum = ev.target.closest('[data-tgsum]');
+    if (sum) toggleTagRow(sum.dataset.tgsum);
+  });
+
+  document.addEventListener('keydown', function (ev) {
+    var t = ev.target;
+    var tagName = t && t.tagName;
+    var typing = tagName === 'INPUT' || tagName === 'TEXTAREA';
+
+    if (ev.key === 'Escape') {
+      if (typing) { t.blur(); return; }
+      if (!$('noteCard').hidden) { closeNote(); return; }
+      hideUndo();
+      return;
+    }
+    if (typing) return;
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (ev.key === 'Enter' && tagName === 'BUTTON') ev.preventDefault();
+  });
+
+  /* ---------- 启动 ---------- */
+  var loaded = load();
+  state.pending = loaded.pending;
+  state.records = loaded.records;
+  renderAll();
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
